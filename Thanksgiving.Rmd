@@ -5,28 +5,27 @@ output: html_notebook
 
 #Reading in Data
 ```{R}
-dat <- read.csv("data.csv")
+dat <- read.csv("/Users/ethanwang/Downloads/thanksgiving.csv")
 ```
 
 #Selecting Columns of Interest, Removing -999999
 ```{R}
-#library(tidyverse)
+library(tidyverse)
 dat2 <- dat%>% select(c(2, 10, 69, 79, 80, 81, 91)) %>% 
-  mutate(previous_day_admission_adult_covid_confirmed_7_day_sum = replace(previous_day_admission_adult_covid_confirmed_7_day_sum, previous_day_admission_adult_covid_confirmed_7_day_sum == -999999, 0)) %>%
-   mutate(previous_day_admission_pediatric_covid_confirmed_7_day_sum = replace(previous_day_admission_pediatric_covid_confirmed_7_day_sum, previous_day_admission_pediatric_covid_confirmed_7_day_sum == -999999, 0)) %>%
-   mutate(previous_day_covid_ED_visits_7_day_sum = replace(previous_day_covid_ED_visits_7_day_sum, previous_day_covid_ED_visits_7_day_sum == -999999, 0)) %>%
-   mutate(previous_day_admission_adult_covid_suspected_7_day_sum = replace(previous_day_admission_adult_covid_suspected_7_day_sum, previous_day_admission_adult_covid_suspected_7_day_sum == -999999, 0)) %>%
-   mutate(previous_day_admission_pediatric_covid_suspected_7_day_sum = replace(previous_day_admission_pediatric_covid_suspected_7_day_sum, previous_day_admission_pediatric_covid_suspected_7_day_sum == -999999, 0)) 
+  mutate(previous_day_admission_adult_covid_confirmed_7_day_sum = replace(previous_day_admission_adult_covid_confirmed_7_day_sum, previous_day_admission_adult_covid_confirmed_7_day_sum == -999999, NA)) %>%
+   mutate(previous_day_admission_pediatric_covid_confirmed_7_day_sum = replace(previous_day_admission_pediatric_covid_confirmed_7_day_sum, previous_day_admission_pediatric_covid_confirmed_7_day_sum == -999999, NA)) %>%
+   mutate(previous_day_covid_ED_visits_7_day_sum = replace(previous_day_covid_ED_visits_7_day_sum, previous_day_covid_ED_visits_7_day_sum == -999999, NA)) %>%
+   mutate(previous_day_admission_adult_covid_suspected_7_day_sum = replace(previous_day_admission_adult_covid_suspected_7_day_sum, previous_day_admission_adult_covid_suspected_7_day_sum == -999999, NA)) %>%
+   mutate(previous_day_admission_pediatric_covid_suspected_7_day_sum = replace(previous_day_admission_pediatric_covid_suspected_7_day_sum, previous_day_admission_pediatric_covid_suspected_7_day_sum == -999999, NA)) 
 ```
 
 #Selecting Appropriate Weeks, Summary Statistics
 ```{R}
 dat3 <- dat2 %>% filter(collection_week == c("2020-12-04") |
                         collection_week == c("2020-11-27") |
-                        collection_week == c("2020-11-20")) %>%
-  group_by(fips_code, collection_week) %>% summarize_if(is.numeric, sum)
+                        collection_week == c("2020-11-20")) 
 
-write.csv(dat3,"temp.csv", row.names = FALSE)
+dat4 <- dat3%>%na.omit() %>% group_by(fips_code, collection_week) %>% summarize_if(is.numeric, sum)
 
 ```
 
