@@ -48,5 +48,22 @@ for (row in seq(from=1, to=nrow(dat5), by=2)){
    
    ratios[nrow(ratios)+1,] = c(dat5[row, "fips_code"], c2, c3, c4, c5, c6)
 }
+```
+
+
+```{R}
+# print summary statistics
 ratios
+cols <- colnames(ratios)
+cols <- cols[-1]
+
+for (col in cols){
+   cat("\n--------------------\n")
+   cat(col, "\n\n")
+   cat("Number of counties with ratio > 1 (increase):", length(which(ratios[[col]] > 1)), "\n")
+   #cat("Number of counties with ratio > 1 (increase):", length(which(ratios$col > 1)), "\n")
+   cat("Number of counties with ratio < 1 (decrease):", length(which(ratios[[col]] < 1)), "\n")
+   cat("Number of counties with ratio = 1:", length(which(ratios[[col]] == 1)) + length(which(is.na(ratios[[col]]))), "\n")   
+}
+
 ```
