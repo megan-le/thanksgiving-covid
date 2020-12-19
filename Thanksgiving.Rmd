@@ -11,43 +11,72 @@ dat <- read.csv("data.csv")
 #Selecting Columns of Interest, Removing -999999
 ```{R}
 library(tidyverse)
-dat2 <- dat%>% select(c(2, 10, 69, 79, 80, 81, 91)) %>% 
-  mutate(previous_day_admission_adult_covid_confirmed_7_day_sum = replace(previous_day_admission_adult_covid_confirmed_7_day_sum, previous_day_admission_adult_covid_confirmed_7_day_sum == -999999, NA)) %>%
-   mutate(previous_day_admission_pediatric_covid_confirmed_7_day_sum = replace(previous_day_admission_pediatric_covid_confirmed_7_day_sum, previous_day_admission_pediatric_covid_confirmed_7_day_sum == -999999, NA)) %>%
-   mutate(previous_day_covid_ED_visits_7_day_sum = replace(previous_day_covid_ED_visits_7_day_sum, previous_day_covid_ED_visits_7_day_sum == -999999, NA)) %>%
-   mutate(previous_day_admission_adult_covid_suspected_7_day_sum = replace(previous_day_admission_adult_covid_suspected_7_day_sum, previous_day_admission_adult_covid_suspected_7_day_sum == -999999, NA)) %>%
-   mutate(previous_day_admission_pediatric_covid_suspected_7_day_sum = replace(previous_day_admission_pediatric_covid_suspected_7_day_sum, previous_day_admission_pediatric_covid_suspected_7_day_sum == -999999, NA)) 
+dat2 <- dat%>% select(c(2, 10, 69)) %>% 
+  mutate(previous_day_admission_adult_covid_confirmed_7_day_sum = replace(previous_day_admission_adult_covid_confirmed_7_day_sum, previous_day_admission_adult_covid_confirmed_7_day_sum == -999999, NA))  
 ```
 
 #Selecting Appropriate Weeks, Summary Statistics
 ```{R}
 dat3 <- dat2 %>% filter(collection_week == c("2020-12-04") |
-                        collection_week == c("2020-11-27")) #|
-                        #collection_week == c("2020-11-20")) 
+                        collection_week == c("2020-11-27") |
+                        collection_week == c("2020-11-20") |
+                        collection_week == c("2020-11-13")
+                        ) 
 
 dat4 <- dat3%>%na.omit() %>% group_by(fips_code, collection_week) %>% summarize_if(is.numeric, sum)
+
+#data_11_13 <- subset(dat4, collection_week == c("2020-11-13"))
+#data_11_20 <- subset(dat4, collection_week == c("2020-11-20"))
+#data_11_27 <- subset(dat4, collection_week == c("2020-11-27"))
+#data_12_04 <- subset(dat4, collection_week == c("2020-12-04"))
+
+data_11_13 <- as.data.frame(dat4[dat4$collection_week==c("2020-11-13"),])
+data_11_20 <- as.data.frame(dat4[dat4$collection_week==c("2020-11-20"),])
+data_11_27 <- as.data.frame(dat4[dat4$collection_week==c("2020-11-27"),])
+data_12_04 <- as.data.frame(dat4[dat4$collection_week==c("2020-12-04"),])
+
+data_11_13
+data_11_20
+data_11_27
+data_12_04
 
 ```
 
 #Computing Ratios
 ```{R}
-dat4
 
-dat5 <- subset(dat4,duplicated(fips_code) | duplicated(fips_code, fromLast=TRUE))
-dat5
+ratios <- data.frame(fips_code=character(), ratio_13to20=double(), ratio_20to27=double(), ratio_27to04=double())
+ratios2 <- data.frame(fips_code=character(), ratio_20to27=double(), ratio_27to04=double())
 
-ratios <- data.frame(fips_code=character(), previous_day_admission_adult_covid_confirmed_7_day_sum
-=double(), previous_day_admission_pediatric_covid_confirmed_7_day_sum=double(), previous_day_covid_ED_visits_7_day_sum=double(), previous_day_admission_adult_covid_suspected_7_day_sum=double(), previous_day_admission_pediatric_covid_suspected_7_day_sum=double())
+#1007 in 13
+#num = head(which(data_11_13$fips_code==1003), 1)
+#res = data_11_13[num, 3]
 
-for (row in seq(from=1, to=nrow(dat5), by=2)){
-   c2 =  dat5[row + 1, "previous_day_admission_adult_covid_confirmed_7_day_sum"] / dat5[row, "previous_day_admission_adult_covid_confirmed_7_day_sum"]
-   c3 = dat5[row + 1, "previous_day_admission_pediatric_covid_confirmed_7_day_sum"] / dat5[row, "previous_day_admission_pediatric_covid_confirmed_7_day_sum"]
-   c4 = dat5[row + 1, "previous_day_covid_ED_visits_7_day_sum"] / dat5[row, "previous_day_covid_ED_visits_7_day_sum"]
-   c5 = dat5[row + 1, "previous_day_admission_adult_covid_suspected_7_day_sum"] / dat5[row, "previous_day_admission_adult_covid_suspected_7_day_sum"]
-   c6 = dat5[row + 1, "previous_day_admission_pediatric_covid_suspected_7_day_sum"] / dat5[row, "previous_day_admission_pediatric_covid_suspected_7_day_sum"]
-   
-   ratios[nrow(ratios)+1,] = c(dat5[row, "fips_code"], c2, c3, c4, c5, c6)
+for (row in 1:nrow(data_11_13)){
+   code <- data_11_13[row, "fips_code"]
+   val_13 <- data_11_13[row, "previous_day_admission_adult_covid_confirmed_7_day_sum"]
+     
+   row_20 <- which(data_11_20$fips_code==code)
+   row_27 <- which(data_11_27$fips_code==code)
+   row_04 <- which(data_12_04$fips_code==code)
+
+   if(length(row_20) > 0 & length(row_27) > 0 & length(row_04) > 0){
+      val_20 <- data_11_20[row_20, 3]
+      val_27 <- data_11_27[row_27, 3]
+      val_04 <- data_12_04[row_04, 3]
+      
+      c2 <- val_20 / val_13
+      c3 <- val_27 / val_20
+      c4 <- val_04 / val_27
+      
+      ratios[nrow(ratios)+1,] = c(code, c2, c3, c4)
+      ratios2[nrow(ratios2)+1,] = c(code, c3/c2, c4/c3)
+   }
+
 }
+ratios
+ratios2
+
 ```
 
 
@@ -61,7 +90,6 @@ for (col in cols){
    cat("\n--------------------\n")
    cat(col, "\n\n")
    cat("Number of counties with ratio > 1 (increase):", length(which(ratios[[col]] > 1)), "\n")
-   #cat("Number of counties with ratio > 1 (increase):", length(which(ratios$col > 1)), "\n")
    cat("Number of counties with ratio < 1 (decrease):", length(which(ratios[[col]] < 1)), "\n")
    cat("Number of counties with ratio = 1:", length(which(ratios[[col]] == 1)) + length(which(is.na(ratios[[col]]))), "\n")   
 }
