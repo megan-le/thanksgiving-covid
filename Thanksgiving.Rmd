@@ -46,7 +46,7 @@ data_12_04
 ```{R}
 
 ratios <- data.frame(fips_code=character(), ratio_13to20=double(), ratio_20to27=double(), ratio_27to04=double())
-ratios2 <- data.frame(fips_code=character(), ratio_20to27=double(), ratio_27to04=double())
+ratios2 <- data.frame(fips_code=character(), ratio_1320to2027=double(), ratio_2027to2704=double())
 
 #1007 in 13
 #num = head(which(data_11_13$fips_code==1003), 1)
@@ -81,8 +81,7 @@ ratios2
 
 
 ```{R}
-# print summary statistics
-ratios
+# print summary statistics for first derivative
 cols <- colnames(ratios)
 cols <- cols[-1]
 
@@ -93,5 +92,25 @@ for (col in cols){
    cat("Number of counties with ratio < 1 (decrease):", length(which(ratios[[col]] < 1)), "\n")
    cat("Number of counties with ratio = 1:", length(which(ratios[[col]] == 1)) + length(which(is.na(ratios[[col]]))), "\n")   
 }
+
+cat("\n\n\n\n\n\n")
+
+# print summary statistics for second derivative
+cols <- colnames(ratios2)
+cols <- cols[-1]
+
+for (col in cols){
+   cat("\n--------------------\n")
+   cat(col, "\n\n")
+   cat("Number of counties with second ratio > 1 (rate of change increased):", length(which(ratios2[[col]] > 1)), "\n")
+   cat("Number of counties with second ratio < 1 (rate of change decreased):", length(which(ratios2[[col]] < 1)), "\n")
+   cat("Number of counties with second ratio = 1:", length(which(ratios2[[col]] == 1)) + length(which(is.na(ratios2[[col]]))), "\n")   
+}
+
+cat("\n\n\n\n\n\n")
+
+cat("Number of counties with an increase every week:", length(which(ratios[["ratio_13to20"]] > 1 & ratios[["ratio_20to27"]] > 1 & ratios[["ratio_27to04"]] > 1)), "\n")
+cat("Number of counties with a decrease every week:", length(which(ratios[["ratio_13to20"]] < 1 & ratios[["ratio_20to27"]] < 1 & ratios[["ratio_27to04"]] < 1)), "\n")
+cat("Number of counties with the same amount of admissions every week:", length(which(ratios[["ratio_13to20"]] == 1 & ratios[["ratio_20to27"]] == 1 & ratios[["ratio_27to04"]] == 1)), "\n")
 
 ```
