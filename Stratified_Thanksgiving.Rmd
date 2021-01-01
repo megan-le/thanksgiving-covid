@@ -82,20 +82,20 @@ ratios
 ```{R} 
 # isolating rows with no increase or decrease
 ratiosNaN <- ratios[ratios$ratio_13to20 == "NaN",]
+ratiosnoNaN <- ratios[ratios$ratio_13to20 != "NaN",]
 ratiosone <- ratiosnoNaN[ratiosnoNaN$ratio_13to20 == 1,]
 ratiosone <- rbind(ratiosone, ratiosNaN)
 
 # isoalting rows with increases or decreases
-ratiosnoNaN <- ratios[ratios$ratio_13to20 != "NaN",]
 ratiosinc <- ratiosnoNaN[ratiosnoNaN$ratio_13to20 > 1,]
 ratiosdec <- ratiosnoNaN[ratiosnoNaN$ratio_13to20 < 1,]
 
-# creating dataframes for ratios of ratios
+# creating dataframes for ratio of ratios
 ratios2one <- data.frame(ratio_1320to2027=double(), ratio_2027to2704=double(), ratio_2704to0411=double())
 ratios2inc <- data.frame(ratio_1320to2027=double(), ratio_2027to2704=double(), ratio_2704to0411=double())
 ratios2dec <- data.frame(ratio_1320to2027=double(), ratio_2027to2704=double(), ratio_2704to0411=double())
 
-# calculating ratios of ratios and adding to dataframes
+# calculating ratio of ratios and adding to dataframes
 for (row in 1:nrow(ratiosone)){
   a <- ratiosone[row, "ratio_13to20"]
   b <- ratiosone[row, "ratio_20to27"]
@@ -228,6 +228,93 @@ cat("Number of counties with a decrease every week:", length(which(ratios[["rati
 #One county has all 1s, the other 172 are all 0s (and thus all NaN for ratios)
 cat("Number of counties with the same amount of admissions every week (all ratios of 1 or NaN):", length(which(ratios[["ratio_13to20"]] == 1 & ratios[["ratio_20to27"]] == 1 & ratios[["ratio_27to04"]] == 1 & ratios[["ratio_04to11"]] == 1)) + length(which(ratios[["ratio_13to20"]] == "NaN" & ratios[["ratio_20to27"]] == "NaN" & ratios[["ratio_27to04"]] == "NaN" & ratios[["ratio_04to11"]] == "NaN"))
 , "\n") 
+```
 
+#Graphs
+```{R}
+# creating dataframe for ratios
+cols <- colnames(ratiosone)
+cols <- cols[-1]
+increase <- c()
+decrease <- c()
+stagnant <- c()
+for (col in cols){
+   increase <- c(increase, length(which(ratiosone[[col]] > 1)))
+   decrease <- c(decrease, length(which(ratiosone[[col]] < 1)))
+   stagnant <- c(stagnant,  length(which(ratiosone[[col]] == 1)) + length(which(is.na(ratiosone[[col]]))))
+}
 
+cols <- colnames(ratiosinc)
+cols <- cols[-1]
+for (col in cols){
+   increase <- c(increase, length(which(ratiosinc[[col]] > 1)))
+   decrease <- c(decrease, length(which(ratiosinc[[col]] < 1)))
+   stagnant <- c(stagnant,  length(which(ratiosinc[[col]] == 1)) + length(which(is.na(ratiosinc[[col]]))))
+}
+
+cols <- colnames(ratiosdec)
+cols <- cols[-1]
+for (col in cols){
+   increase <- c(increase, length(which(ratiosdec[[col]] > 1)))
+   decrease <- c(decrease, length(which(ratiosdec[[col]] < 1)))
+   stagnant <- c(stagnant,  length(which(ratiosdec[[col]] == 1)) + length(which(is.na(ratiosdec[[col]]))))
+}
+ 
+ratiosgraphdata <- data.frame(greater_than_1=c(increase), less_than_1=c(decrease), NaN_or_1 = c(stagnant),
+                    pre_thanksgiving_status = c("stagnant = 1 or NaN","stagnant = 1 or NaN","stagnant = 1 or NaN",
+                                                "stagnant = 1 or NaN","increase > 1",
+                                              "increase > 1","increase > 1","increase > 1",
+                                              "decrease < 1","decrease < 1","decrease < 1","decrease < 1"),
+                    ratio = c("13to20","20to27","27to04","04to11","13to20","20to27",
+                              "27to04","04to11","13to20","20to27","27to04","04to11"))
+ratiosgraphdata <- ratiosgraphdata %>% mutate(ratio = fct_relevel(ratio,"13to20","20to27","27to04","04to11"))
+ratiosgraphdata <- ratiosgraphdata %>% pivot_longer(cols = 1:3)
+colnames(ratiosgraphdata)[3] = "ratio_value"
+colnames(ratiosgraphdata)[4] = "number_of_counties"
+
+# creating dataframe for ratio of ratios
+cols <- colnames(ratios2one)
+increase <- c()
+decrease <- c()
+stagnant <- c()
+for (col in cols){
+   increase <- c(increase, length(which(ratios2one[[col]] > 1)))
+   decrease <- c(decrease, length(which(ratios2one[[col]] < 1)))
+   stagnant <- c(stagnant,  length(which(ratios2one[[col]] == 1)) + length(which(is.na(ratios2one[[col]]))))
+}
+
+cols <- colnames(ratios2inc)
+for (col in cols){
+   increase <- c(increase, length(which(ratios2inc[[col]] > 1)))
+   decrease <- c(decrease, length(which(ratios2inc[[col]] < 1)))
+   stagnant <- c(stagnant,  length(which(ratios2inc[[col]] == 1)) + length(which(is.na(ratios2inc[[col]]))))
+}
+
+cols <- colnames(ratios2dec)
+for (col in cols){
+   increase <- c(increase, length(which(ratios2dec[[col]] > 1)))
+   decrease <- c(decrease, length(which(ratios2dec[[col]] < 1)))
+   stagnant <- c(stagnant,  length(which(ratios2dec[[col]] == 1)) + length(which(is.na(ratios2dec[[col]]))))
+}
+
+ratios2graphdata <- data.frame(greater_than_1=c(increase), less_than_1=c(decrease), NaN_or_1 = c(stagnant),
+                    pre_thanksgiving_status = c("stagnant = 1 or NaN","stagnant = 1 or NaN","stagnant = 1 or NaN",
+                                              "increase > 1", "increase > 1","increase > 1",
+                                              "decrease < 1","decrease < 1","decrease < 1"),
+                    ratio_of_ratios = c("1327","2004","2711","1327","2004","2711","1327","2004","2711"))
+
+ratios2graphdata <- ratios2graphdata %>% pivot_longer(cols = 1:3)
+colnames(ratios2graphdata)[3] = "ratio_of_ratios_value"
+colnames(ratios2graphdata)[4] = "number_of_counties"
+```
+
+```{R}
+# generating histograms
+ratiosgraphdata %>% ggplot(aes(ratio , number_of_counties, fill = ratio_value)) +   
+  geom_bar(stat="identity", position = "dodge") + facet_wrap(~pre_thanksgiving_status) + scale_fill_brewer() +
+  ggtitle("Between-Week Ratios by Pre-Thanksgiving Status")
+
+ratios2graphdata %>% ggplot(aes(ratio_of_ratios , number_of_counties, fill = ratio_of_ratios_value)) +   
+  geom_bar(stat="identity", position = "dodge") + facet_wrap(~pre_thanksgiving_status) + scale_fill_brewer() +
+  ggtitle("Ratios Between Ratios by Pre-Thanksgiving Status")
 ```
