@@ -1,0 +1,233 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Reading in Data
+```{R}
+dat <- read.csv("/Users/ethanwang/Downloads/1211data.csv")
+```
+
+#Selecting Columns of Interest, Removing -999999
+```{R}
+library(tidyverse)
+# use only confirmed adult admissions and replace -999999 with NA
+dat2 <- dat%>% select(c(2, 10, 69)) %>% 
+  mutate(previous_day_admission_adult_covid_confirmed_7_day_sum = replace(previous_day_admission_adult_covid_confirmed_7_day_sum, previous_day_admission_adult_covid_confirmed_7_day_sum == -999999, NA))  
+```
+
+#Selecting Appropriate Weeks, Summary Statistics
+```{R}
+# filter data to only contain data between 11/13 and 12/4
+dat3 <- dat2 %>% filter(collection_week == c("2020-12-11") |
+                        collection_week == c("2020-12-04") |
+                        collection_week == c("2020-11-27") |
+                        collection_week == c("2020-11-20") |
+                        collection_week == c("2020-11-13")) 
+# remove rows without data (has NA)
+dat4 <- dat3%>%na.omit() %>% group_by(fips_code, collection_week) %>% summarize_if(is.numeric, sum)
+# put the data for each week into a separate dataframe
+data_11_13 <- as.data.frame(dat4[dat4$collection_week==c("2020-11-13"),])
+data_11_20 <- as.data.frame(dat4[dat4$collection_week==c("2020-11-20"),])
+data_11_27 <- as.data.frame(dat4[dat4$collection_week==c("2020-11-27"),])
+data_12_04 <- as.data.frame(dat4[dat4$collection_week==c("2020-12-04"),])
+data_12_11 <- as.data.frame(dat4[dat4$collection_week==c("2020-12-11"),])
+data_11_13
+data_11_20
+data_11_27
+data_12_04
+data_12_11
+```
+
+#Computing Ratios
+```{R}
+# initialize dataframes for the ratios 
+ratios <- data.frame(fips_code=character(), ratio_13to20=double(), ratio_20to27=double(), ratio_27to04=double(), ratio_04to11=double())
+# iterate through each row in the 11/13 table
+for (row in 1:nrow(data_11_13)){
+   # get the FIPS code and number of admissions for this row/county
+   code <- data_11_13[row, "fips_code"]
+   val_13 <- data_11_13[row, "previous_day_admission_adult_covid_confirmed_7_day_sum"]
+     
+   # get the row numbers for this county in the other weeks' tables
+   row_20 <- which(data_11_20$fips_code==code)
+   row_27 <- which(data_11_27$fips_code==code)
+   row_04 <- which(data_12_04$fips_code==code)
+   row_11 <- which(data_12_11$fips_code==code)
+   # check that this county also has data for all of the other weeks
+   if(length(row_20) > 0 & length(row_27) > 0 & length(row_04) > 0 & length(row_11) > 0){
+      # get the number of admissions for each week
+      val_20 <- data_11_20[row_20, 3]
+      val_27 <- data_11_27[row_27, 3]
+      val_04 <- data_12_04[row_04, 3]
+      val_11 <- data_12_11[row_11, 3]
+      
+      # compute each ratio
+      c2 <- val_20 / val_13
+      c3 <- val_27 / val_20
+      c4 <- val_04 / val_27
+      c5 <- val_11 / val_04
+      
+      # add to the result tables
+      ratios[nrow(ratios)+1,] = c(code, c2, c3, c4, c5)
+   }
+}
+
+# seems like NaN = 0/0, inf = positive value/0
+# 1498 counties w/ data for all 4 weeks
+ratios
+```
+
+#Stratification
+```{R} 
+# isolating rows with no increase or decrease
+ratiosNaN <- ratios[ratios$ratio_13to20 == "NaN",]
+ratiosone <- ratiosnoNaN[ratiosnoNaN$ratio_13to20 == 1,]
+ratiosone <- rbind(ratiosone, ratiosNaN)
+
+# isoalting rows with increases or decreases
+ratiosnoNaN <- ratios[ratios$ratio_13to20 != "NaN",]
+ratiosinc <- ratiosnoNaN[ratiosnoNaN$ratio_13to20 > 1,]
+ratiosdec <- ratiosnoNaN[ratiosnoNaN$ratio_13to20 < 1,]
+
+# creating dataframes for ratios of ratios
+ratios2one <- data.frame(ratio_1320to2027=double(), ratio_2027to2704=double(), ratio_2704to0411=double())
+ratios2inc <- data.frame(ratio_1320to2027=double(), ratio_2027to2704=double(), ratio_2704to0411=double())
+ratios2dec <- data.frame(ratio_1320to2027=double(), ratio_2027to2704=double(), ratio_2704to0411=double())
+
+# calculating ratios of ratios and adding to dataframes
+for (row in 1:nrow(ratiosone)){
+  a <- ratiosone[row, "ratio_13to20"]
+  b <- ratiosone[row, "ratio_20to27"]
+  c <- ratiosone[row, "ratio_27to04"]
+  d <- ratiosone[row, "ratio_04to11"]
+  
+  ratios2one[nrow(ratios2one)+1,] = c(b/a, c/b, d/c)
+}
+
+for (row in 1:nrow(ratiosinc)){
+  a <- ratiosinc[row, "ratio_13to20"]
+  b <- ratiosinc[row, "ratio_20to27"]
+  c <- ratiosinc[row, "ratio_27to04"]
+  d <- ratiosinc[row, "ratio_04to11"]
+  
+  ratios2inc[nrow(ratios2inc)+1,] = c(b/a, c/b, d/c)
+}
+
+for (row in 1:nrow(ratiosdec)){
+  a <- ratiosdec[row, "ratio_13to20"]
+  b <- ratiosdec[row, "ratio_20to27"]
+  c <- ratiosdec[row, "ratio_27to04"]
+  d <- ratiosdec[row, "ratio_04to11"]
+  
+  ratios2dec[nrow(ratios2dec)+1,] = c(b/a, c/b, d/c)
+}
+
+ratiosone
+ratiosinc
+ratiosdec
+ratios2one
+ratios2inc
+ratios2dec
+```
+
+#First Derivative Summary Statistics
+```{R}
+# print summary statistics for first derivative
+
+cat("SUMMARY OF RATIOS BETWEEN WEEKS")
+cat("\n\n\n\n\n\n")
+
+cols <- colnames(ratiosone)
+cols <- cols[-1]
+cat("Counties with Ratio = 1 or NaN Before Thanksgiving (13 to 20)")
+for (col in cols){
+   cat("\n--------------------\n")
+   cat(col, "\n\n")
+   cat("Number of counties with ratio > 1 (increase):", length(which(ratiosone[[col]] > 1)), "\n")
+   cat("Number of counties with ratio < 1 (decrease):", length(which(ratiosone[[col]] < 1)), "\n")
+   cat("Number of counties with ratio = 1 or NaN (0/0) (stagnant):", 
+length(which(ratiosone[[col]] == 1)) + length(which(is.na(ratiosone[[col]]))), "\n")  
+}
+cat("\n\n\n\n\n\n")
+
+cols <- colnames(ratiosinc)
+cols <- cols[-1]
+cat("Counties with Ratios >1 Before Thanksgiving (13 to 20)")
+for (col in cols){
+   cat("\n--------------------\n")
+   cat(col, "\n\n")
+   cat("Number of counties with ratio > 1 (increase):", length(which(ratiosinc[[col]] > 1)), "\n")
+   cat("Number of counties with ratio < 1 (decrease):", length(which(ratiosinc[[col]] < 1)), "\n")
+   cat("Number of counties with ratio = 1 or NaN (0/0) (stagnant):", 
+length(which(ratiosinc[[col]] == 1)) + length(which(is.na(ratiosinc[[col]]))), "\n")  
+}
+cat("\n\n\n\n\n\n")
+
+cols <- colnames(ratiosdec)
+cols <- cols[-1]
+cat("Counties with Ratios < 1 Before Thanksgiving (13 to 20)")
+for (col in cols){
+   cat("\n--------------------\n")
+   cat(col, "\n\n")
+   cat("Number of counties with ratio > 1 (increase):", length(which(ratiosdec[[col]] > 1)), "\n")
+   cat("Number of counties with ratio < 1 (decrease):", length(which(ratiosdec[[col]] < 1)), "\n")
+   cat("Number of counties with ratio = 1 or NaN (0/0) (stagnant):", 
+length(which(ratiosdec[[col]] == 1)) + length(which(is.na(ratiosdec[[col]]))), "\n")  
+}
+cat("\n\n\n\n\n\n")
+```
+
+```{R}
+# print summary statistics for second derivative
+
+cat("SUMMARY OF RATIOS BETWEEN RATIOS")
+cat("\n\n\n\n\n\n")
+
+cols <- colnames(ratios2one)
+cat("Counties with Ratio = 1 or NaN Before Thanksgiving (13 to 20)")
+for (col in cols){
+   cat("\n--------------------\n")
+   cat(col, "\n\n")
+   cat("Number of counties with ratio > 1 (increased rate):", length(which(ratios2one[[col]] > 1)), "\n")
+   cat("Number of counties with ratio < 1 (decreased rate):", length(which(ratios2one[[col]] < 1)), "\n")
+   cat("Number of counties with ratio = 1 or NaN (0/0) (stagnant rate):", 
+length(which(ratios2one[[col]] == 1)) + length(which(is.na(ratios2one[[col]]))), "\n")  
+}
+cat("\n\n\n\n\n\n")
+
+cols <- colnames(ratios2inc)
+cat("Counties with Ratio > 1 Before Thanksgiving (13 to 20)")
+for (col in cols){
+   cat("\n--------------------\n")
+   cat(col, "\n\n")
+   cat("Number of counties with ratio > 1 (increased rate):", length(which(ratios2inc[[col]] > 1)), "\n")
+   cat("Number of counties with ratio < 1 (decreased rate):", length(which(ratios2inc[[col]] < 1)), "\n")
+   cat("Number of counties with ratio = 1 or NaN (0/0) (stagnant rate):", 
+length(which(ratios2inc[[col]] == 1)) + length(which(is.na(ratios2inc[[col]]))), "\n")  
+}
+cat("\n\n\n\n\n\n")
+
+cols <- colnames(ratios2dec)
+cat("Counties with Ratio < 1 Before Thanksgiving (13 to 20)")
+for (col in cols){
+   cat("\n--------------------\n")
+   cat(col, "\n\n")
+   cat("Number of counties with ratio > 1 (increased rate):", length(which(ratios2dec[[col]] > 1)), "\n")
+   cat("Number of counties with ratio < 1 (decreased rate):", length(which(ratios2dec[[col]] < 1)), "\n")
+   cat("Number of counties with ratio = 1 or NaN (0/0) (stagnant rate):", 
+length(which(ratios2dec[[col]] == 1)) + length(which(is.na(ratios2dec[[col]]))), "\n")  
+}
+cat("\n\n\n\n\n\n")
+
+
+cat("\n\n\n\n\n\n")
+cat("Number of counties with an increase every week:", length(which(ratios[["ratio_13to20"]] > 1 & ratios[["ratio_20to27"]] > 1 & ratios[["ratio_27to04"]] > 1 & ratios[["ratio_04to11"]] > 1)), "\n")
+cat("Number of counties with a decrease every week:", length(which(ratios[["ratio_13to20"]] < 1 & ratios[["ratio_20to27"]] < 1 & ratios[["ratio_27to04"]] < 1 & ratios[["ratio_04to11"]] < 1)), "\n")
+
+#One county has all 1s, the other 172 are all 0s (and thus all NaN for ratios)
+cat("Number of counties with the same amount of admissions every week (all ratios of 1 or NaN):", length(which(ratios[["ratio_13to20"]] == 1 & ratios[["ratio_20to27"]] == 1 & ratios[["ratio_27to04"]] == 1 & ratios[["ratio_04to11"]] == 1)) + length(which(ratios[["ratio_13to20"]] == "NaN" & ratios[["ratio_20to27"]] == "NaN" & ratios[["ratio_27to04"]] == "NaN" & ratios[["ratio_04to11"]] == "NaN"))
+, "\n") 
+
+
+```
