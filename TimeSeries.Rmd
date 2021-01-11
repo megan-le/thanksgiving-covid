@@ -1,0 +1,194 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Reading in Data
+```{R}
+library(tidyverse)
+# source - https://healthdata.gov/dataset/covid-19-reported-patient-impact-and-hospital-capacity-facility 
+dat <- read.csv("/Users/ethanwang/Downloads/jandata.csv")
+
+# source - US Census (2020 Census data not yet released)
+# https://www.census.gov/data/datasets/time-series/demo/popest/2010s-counties-total.html
+pop <- read.csv("/Users/ethanwang/Downloads/co-est2019-alldata.csv", stringsAsFactors = FALSE)
+
+# source - US Census (2018 most recent - should be fine since no county changes since then)
+# https://www.census.gov/programs-surveys/geography/technical-documentation/county-changes.html 
+# https://www.census.gov/geographies/reference-files/2018/demo/popest/2018-fips.html
+
+fips <- read.csv("/Users/ethanwang/Downloads/geocodes.csv")
+
+# https://www.nrcs.usda.gov/wps/portal/nrcs/detail/?cid=nrcs143_013696
+statefips <- read.csv("/Users/ethanwang/Downloads/statefips.csv")
+
+```
+
+#Processing data 
+```{R}
+# isolating counties
+pop[1835, "CTYNAME"] <- "Dona Ana County"
+pop <- pop %>% select(CTYNAME,POPESTIMATE2019, STNAME) %>% filter(str_count(CTYNAME, pattern = " ") >= 1) %>% rename(area = CTYNAME)
+
+#p adding
+fips$County.Code..FIPS. <- str_pad(fips$County.Code..FIPS., 3, pad = 0)
+# determining fips codes
+fips$codes <- paste0(fips$State.Code..FIPS., fips$County.Code..FIPS.)
+fips <- fips %>% rename(area = Area.Name..including.legal.statistical.area.description.) %>% rename(Code = State.Code..FIPS.) %>% select(area, codes, Code)
+
+fips <- left_join(fips, statefips)
+fips <- fips %>% select(area, codes, State) %>% rename(STNAME = State)
+```
+
+#Merging
+```{R}
+# merging fips and county data
+merged <- inner_join(pop, fips)
+
+#seems like theres lots of duplicates all w/ codes = 51000... not sure why
+merged[duplicated(merged$codes),]
+merged <- merged[merged$codes != 51000,] %>% select(POPESTIMATE2019, codes)
+```
+
+#COVID Data
+```{R}
+library(tidyverse)
+# use only confirmed adult admissions and replace -999999 with NA
+dat2 <- dat%>% select(c(2, 10, 69)) %>% 
+  mutate(previous_day_admission_adult_covid_confirmed_7_day_sum = replace(previous_day_admission_adult_covid_confirmed_7_day_sum, previous_day_admission_adult_covid_confirmed_7_day_sum == -999999, NA)) %>% rename (codes = fips_code)
+```
+
+#Selecting Appropriate Weeks, merging, filtering, creating pop100k
+```{R}
+# filter data to only contain data between 11/13 and 12/4
+dat3 <- dat2 %>% filter(collection_week == c("2020-12-11") |
+                        collection_week == c("2020-12-04") |
+                        collection_week == c("2020-11-27") |
+                        collection_week == c("2020-11-20") |
+                        collection_week == c("2020-11-13") |
+                        collection_week == c("2020-11-06") |
+                        collection_week == c("2020-10-30") |
+                        collection_week == c("2020-12-18")) 
+
+dat4 <- dat3%>%na.omit() %>% group_by(codes, collection_week) %>% summarize_if(is.numeric, sum)
+dat4$codes <- as.character(dat4$codes)
+
+# final datasets for graph
+mergedfinal <- inner_join(dat4, merged) %>% filter(POPESTIMATE2019 > 100000) %>% mutate(admits_per_100k = previous_day_admission_adult_covid_confirmed_7_day_sum/POPESTIMATE2019*100000)
+
+mergedfinalmillion <- inner_join(dat4, merged) %>% filter(POPESTIMATE2019 > 1000000) %>% mutate(admits_per_100k = previous_day_admission_adult_covid_confirmed_7_day_sum/POPESTIMATE2019*100000)
+
+#looking at mean values
+mergedfinal %>% group_by(collection_week) %>% summarize_at(4, mean)
+mergedfinalmillion %>% group_by(collection_week) %>% summarize_at(4, mean)
+```
+
+#ID increasing, decreasing (using linear regression as a guide)
+```{R}
+# making week numeric 
+mergedfinalmillion <- mergedfinalmillion %>% mutate(
+  days_since_1030 = case_when(collection_week=="2020-10-30" ~0, 
+                         collection_week=="2020-11-06" ~7,
+                         collection_week=="2020-11-13" ~14,
+                         collection_week=="2020-11-20" ~21,
+                         collection_week=="2020-11-27" ~28,
+                         collection_week=="2020-12-04" ~35,
+                         collection_week=="2020-12-11" ~42,
+                         collection_week=="2020-12-18" ~49))
+
+# generating linear models for each county/fips_code 
+codes <- list()
+slopes <- list()
+trendsmil <- data.frame(code = character(), slope = double(), stringsAsFactors = F)
+for (row in 1:nrow(mergedfinalmillion)){
+  # taking code
+  code <- mergedfinalmillion[row, "codes"]
+  
+  # isolating unique codes
+  if (!(code %in% codes)) {
+    codes = c(codes,code)
+    
+    # identifying slope of unique codes
+    tempdat <- mergedfinalmillion %>% filter(codes == code)
+    tempmodel <- lm(admits_per_100k ~ days_since_1030, data = tempdat)
+    slope <- coef(tempmodel)[[2]]
+    slopes <- c(slopes, slope)
+    
+    trendsmil[nrow(trendsmil)+1,] <- c(code, slope)
+  }
+} 
+trendsmil
+
+#repeating process for 100k
+mergedfinal <- mergedfinal %>% mutate(
+  days_since_1030 = case_when(collection_week=="2020-10-30" ~0, 
+                         collection_week=="2020-11-06" ~7,
+                         collection_week=="2020-11-13" ~14,
+                         collection_week=="2020-11-20" ~21,
+                         collection_week=="2020-11-27" ~28,
+                         collection_week=="2020-12-04" ~35,
+                         collection_week=="2020-12-11" ~42,
+                         collection_week=="2020-12-18" ~49))
+
+# generating linear models for each county/fips_code 
+codes <- list()
+slopes <- list()
+trends100k <- data.frame(code = character(), slope = double(), stringsAsFactors = F)
+for (row in 1:nrow(mergedfinal)){
+  # taking code
+  code <- mergedfinal[row, "codes"]
+  
+  # isolating unique codes
+  if (!(code %in% codes)) {
+    codes = c(codes,code)
+    
+    # identifying slope of unique codes
+    tempdat <- mergedfinal %>% filter(codes == code)
+    tempmodel <- lm(admits_per_100k ~ days_since_1030, data = tempdat)
+    slope <- coef(tempmodel)[[2]]
+    slopes <- c(slopes, slope)
+    
+    trends100k[nrow(trends100k)+1,] <- c(code, slope)
+  }
+} 
+trends100k
+```
+
+```{R}
+#merging dataset 
+mergedfinalmillion <- left_join(mergedfinalmillion, trendsmil, by = c("codes" = "code"))
+mergedfinal <- left_join(mergedfinal, trends100k, by = c("codes" = "code"))
+
+# ID slope as increasing vs. decreasing
+mergedfinalmillion <- mergedfinalmillion %>% mutate(trend = case_when(slope >0 ~ "increasing", slope <= 0 ~"decreasing")) # threshold for no change?
+mergedfinal <- mergedfinal %>% mutate(trend = case_when(slope >0 ~ "increasing", slope <=0 ~"decreasing"))
+
+```
+
+#Plotting final dataset (need to stratify by increasing, decreasing, etc. and plot mean lines)
+
+```{R}
+#trendlines 100k
+ggplot(data = mergedfinal, 
+       aes(x=collection_week, y = admits_per_100k)) + 
+  geom_line(aes(group = codes, color = trend), alpha = 1/10, size = 1) + 
+  ggtitle("Admits per 100k vs. Collection Week, Counties w/ Pop > 100k") +
+  stat_summary(fun = mean, color = "black", size = .2)
+
+#trendlines 1 million
+ggplot(data = mergedfinalmillion, 
+       aes(x=collection_week, y = admits_per_100k)) + 
+  geom_line(aes(group = codes, color = trend), alpha = 1/5, size = 1) + 
+  ggtitle("Admits per 100k vs. Collection Week, Counties w/ Pop > 1 million") +
+  stat_summary(fun = mean, color = "black") 
+
+#overall scatter 100k
+ggplot(data = mergedfinal, 
+       aes(x=admits_per_100k, color = collection_week)) + 
+  geom_density() + scale_color_brewer() + xlim(0,100) + ggtitle("Density - 100k")
+
+ggplot(data = mergedfinalmillion, 
+       aes(x=admits_per_100k, color = collection_week)) + 
+  geom_density() + scale_color_brewer() + xlim(0,100) + ggtitle("Density - 1 million")
+
+```
