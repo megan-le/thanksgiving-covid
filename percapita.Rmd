@@ -100,6 +100,7 @@ ggplot(data = finaldata,
   geom_line(aes(group = pop_category), alpha = 1, size = 1) + 
   ggtitle("Admits per 100k vs. Collection Week Stratified by Population") + 
   theme(axis.text.x = element_text(size = 5))
+# note: average admits/100k is taking average of admits/100k of each county, not total admissions within population division / total population
 ```
 
 #Aggregate Rank
@@ -142,6 +143,66 @@ test2 <- mergedfinal %>% filter(pop_category == "0+") %>% filter(collection_week
                         collection_week == c("2020-12-25"))
 
 test3 <- mergedfinal %>% filter(pop_category == "0+") %>% filter(collection_week == c("2020-11-20") |
-                        collection_week == c("2020-12-04"))
+                        collection_week == c("2020-11-27")|collection_week == c("2020-12-04")|collection_week == c("2020-12-11")|collection_week == c("2020-12-18")|collection_week == c("2020-12-25"))
+
+
+test4 <- mergedfinal %>% filter(pop_category == "0+") %>% filter(collection_week == c("2020-12-25") |
+                        collection_week == c("2020-01-01")|collection_week == c("2020-01-08")|collection_week == c("2020-01-15"))
+
+# all data entries appear reasonable
 ```
 
+#Re-do w/ revised calculation scheme
+```{R}
+#recreating graph using total within each population category instead of averaging admits/100k of each individual county
+finaldata2 <- mergedfinal %>% group_by(collection_week, pop_category) %>% summarize_if(is.numeric, sum) 
+finaldata2 <- finaldata2 %>% mutate(admits_per_100k = previous_day_admission_adult_covid_confirmed_7_day_sum/POPESTIMATE2019*100000)
+
+#making collection week shorter
+library(stringi)
+finaldata2$collection_week <- str_sub(finaldata2$collection_week, -5, -1)
+table(finaldata2$collection_week)
+summary(finaldata2)
+
+finaldata2$pop_category <- factor(finaldata2$pop_category, levels = c("0+", "10k+", "20k+", "35k+", "50k+", "100k+","300k+"))
+finaldata2$collection_week <- factor(finaldata2$collection_week, levels = c("07-31","08-07","08-14","08-21","08-28","09-04",
+                                                                          "09-11","09-18","09-25","10-02","10-09","10-16","10-23",
+                                                                          "10-30","11-06","11-13","11-20",
+                                                                          "11-27","12-04","12-11","12-18","12-25",
+                                                                          "01-01","01-08","01-15"))
+
+ggplot(data = finaldata2, 
+       aes(x=collection_week, y = admits_per_100k, color = pop_category)) + 
+  geom_line(aes(group = pop_category), alpha = 1, size = 1) + 
+  ggtitle("Admits per 100k vs. Collection Week Stratified by Population") + 
+  theme(axis.text.x = element_text(size = 5))
+# note: average admits/100k is taking average of admits/100k of each county, not total admissions within population division / total population
+
+finaldata2$collection_week <- as.character(finaldata2$collection_week)
+finaldata2$pop_category <- as.character(finaldata2$pop_category)
+
+weeks2 <- list()
+combined2 <- data.frame(popcat = character(), rank = numeric())
+
+for (row in 1:nrow(finaldata2)){
+  # taking week
+  week2 <- finaldata2[row, "collection_week"]
+  # isolating unique weeks
+  if (!(week2 %in% weeks2)) {
+    weeks2 = c(weeks2,week2)
+    
+    # identifying rank for population category for each week (lower number for rank = less COVID)
+    tempdata2 <- finaldata2 %>% filter(collection_week == week2)
+    tempdata2 <- tempdata2 %>% mutate(rank = order(order(admits_per_100k,pop_category)))
+    tempdata2 <- tempdata2 %>% ungroup() %>% select(pop_category, rank)
+    
+    combined2 <- rbind(combined2, tempdata2)
+  }
+}
+
+combined2$pop_category <- factor(combined2$pop_category, levels = c("0+", "10k+", "20k+", "35k+", "50k+", "100k+","300k+"))
+output2 <- combined2 %>% group_by(pop_category) %>% summarize_if(is.numeric, sum) %>% rename(aggregate_rank = rank)
+output2
+
+
+```
