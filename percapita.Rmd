@@ -1,0 +1,147 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Reading in Data
+```{R}
+library(tidyverse)
+# source - https://healthdata.gov/dataset/covid-19-reported-patient-impact-and-hospital-capacity-facility 
+dat <- read.csv("/Users/ethanwang/Downloads/hospitalcovidjan24.csv")
+
+# source - US Census (2020 Census data not yet released)
+# https://www.census.gov/data/datasets/time-series/demo/popest/2010s-counties-total.html
+pop <- read.csv("/Users/ethanwang/Downloads/co-est2019-alldata.csv", stringsAsFactors = FALSE)
+
+# source - US Census (2018 most recent - should be fine since no county changes since then)
+# https://www.census.gov/programs-surveys/geography/technical-documentation/county-changes.html 
+# https://www.census.gov/geographies/reference-files/2018/demo/popest/2018-fips.html
+
+fips <- read.csv("/Users/ethanwang/Downloads/geocodes.csv")
+
+# https://www.nrcs.usda.gov/wps/portal/nrcs/detail/?cid=nrcs143_013696
+statefips <- read.csv("/Users/ethanwang/Downloads/statefips.csv")
+
+```
+
+```{R}
+# isolating counties
+pop[1835, "CTYNAME"] <- "Dona Ana County"
+pop <- pop %>% select(CTYNAME,POPESTIMATE2019, STNAME) %>% filter(str_count(CTYNAME, pattern = " ") >= 1) %>% rename(area = CTYNAME)
+
+#p adding
+fips$County.Code..FIPS. <- str_pad(fips$County.Code..FIPS., 3, pad = 0)
+# determining fips codes
+fips$codes <- paste0(fips$State.Code..FIPS., fips$County.Code..FIPS.)
+fips <- fips %>% rename(area = Area.Name..including.legal.statistical.area.description.) %>% rename(Code = State.Code..FIPS.) %>% select(area, codes, Code)
+
+fips <- left_join(fips, statefips)
+fips <- fips %>% select(area, codes, State) %>% rename(STNAME = State)
+```
+
+#Merging
+```{R}
+# merging fips and county data
+merged <- inner_join(pop, fips)
+
+#seems like theres lots of duplicates all w/ codes = 51000... not sure why
+merged[duplicated(merged$codes),]
+merged <- merged[merged$codes != 51000,] %>% select(POPESTIMATE2019, codes)
+```
+
+#COVID Data
+```{R}
+library(tidyverse)
+# use only confirmed adult admissions and replace -999999 with NA
+dat2 <- dat%>% select(c(2, 10, 69)) %>% 
+  mutate(previous_day_admission_adult_covid_confirmed_7_day_sum = replace(previous_day_admission_adult_covid_confirmed_7_day_sum, previous_day_admission_adult_covid_confirmed_7_day_sum == -999999, NA)) %>% rename (codes = fips_code)
+```
+
+#Selecting Appropriate Weeks, merging, filtering, creating pop100k
+```{R}
+# filter data to only contain data between 11/13 and 12/4
+dat4 <- dat2%>%na.omit() %>% group_by(codes, collection_week) %>% summarize_if(is.numeric, sum)
+dat4$codes <- as.character(dat4$codes)
+
+# final datasets for graph
+mergedfinal <- inner_join(dat4, merged) %>% 
+  mutate(pop_category = case_when(POPESTIMATE2019 >0 & POPESTIMATE2019 < 10000 ~ "0+", 
+                                 POPESTIMATE2019 >= 10000 & POPESTIMATE2019 < 20000 ~ "10k+", 
+                                 POPESTIMATE2019 >= 20000 & POPESTIMATE2019 < 35000 ~ "20k+",
+                                 POPESTIMATE2019 >= 35000 & POPESTIMATE2019 < 50000 ~ "35k+",
+                                 POPESTIMATE2019 >= 50000 & POPESTIMATE2019 < 100000 ~ "50k+",
+                                 POPESTIMATE2019 >= 100000 & POPESTIMATE2019 < 300000 ~ "100k+",
+                                 POPESTIMATE2019 >= 300000 ~ "300k+")) %>% 
+  mutate(admits_per_100k = previous_day_admission_adult_covid_confirmed_7_day_sum/POPESTIMATE2019*100000)
+
+table(mergedfinal$pop_category)
+
+#looking at mean values
+finaldata <- mergedfinal %>% group_by(collection_week, pop_category) %>% summarize_at(4, mean) 
+
+#making collection week shorter
+library(stringi)
+finaldata$collection_week <- str_sub(finaldata$collection_week, -5, -1)
+table(finaldata$collection_week)
+summary(finaldata)
+```
+
+#Plotting
+```{R}
+finaldata$pop_category <- factor(finaldata$pop_category, levels = c("0+", "10k+", "20k+", "35k+", "50k+", "100k+","300k+"))
+finaldata$collection_week <- factor(finaldata$collection_week, levels = c("07-31","08-07","08-14","08-21","08-28","09-04",
+                                                                          "09-11","09-18","09-25","10-02","10-09","10-16","10-23",
+                                                                          "10-30","11-06","11-13","11-20",
+                                                                          "11-27","12-04","12-11","12-18","12-25",
+                                                                          "01-01","01-08","01-15"))
+
+ggplot(data = finaldata, 
+       aes(x=collection_week, y = admits_per_100k, color = pop_category)) + 
+  geom_line(aes(group = pop_category), alpha = 1, size = 1) + 
+  ggtitle("Admits per 100k vs. Collection Week Stratified by Population") + 
+  theme(axis.text.x = element_text(size = 5))
+```
+
+#Aggregate Rank
+```{R}
+finaldata$collection_week <- as.character(finaldata$collection_week)
+finaldata$pop_category <- as.character(finaldata$pop_category)
+
+weeks <- list()
+combined <- data.frame(popcat = character(), rank = numeric())
+
+for (row in 1:nrow(finaldata)){
+  # taking week
+  week <- finaldata[row, "collection_week"]
+  # isolating unique weeks
+  if (!(week %in% weeks)) {
+    weeks = c(weeks,week)
+    
+    # identifying rank for population category for each week (lower number for rank = less COVID)
+    tempdata <- finaldata %>% filter(collection_week == week)
+    tempdata <- tempdata %>% mutate(rank = order(order(admits_per_100k,pop_category)))
+    tempdata <- tempdata %>% ungroup() %>% select(pop_category, rank)
+    
+    combined <- rbind(combined, tempdata)
+  }
+}
+
+combined$pop_category <- factor(combined$pop_category, levels = c("0+", "10k+", "20k+", "35k+", "50k+", "100k+","300k+"))
+output <- combined %>% group_by(pop_category) %>% summarize_if(is.numeric, sum) %>% rename(aggregate_rank = rank)
+output
+```
+
+```{R}
+# dataset exploration
+test <- mergedfinal %>% filter(pop_category == "0+") %>% filter(collection_week == c("2020-08-07") |
+                        collection_week == c("2020-08-14"))
+
+#spike is simply due to 13155 (Irwin county georgia reporting 593 cases on 8/14 collection week)
+
+test2 <- mergedfinal %>% filter(pop_category == "0+") %>% filter(collection_week == c("2020-12-18") |
+                        collection_week == c("2020-12-25"))
+
+test3 <- mergedfinal %>% filter(pop_category == "0+") %>% filter(collection_week == c("2020-11-20") |
+                        collection_week == c("2020-12-04"))
+```
+
